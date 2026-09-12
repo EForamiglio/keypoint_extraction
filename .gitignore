@@ -1,0 +1,23 @@
+# Dados capturados — grandes e locais a cada máquina
+data/
+
+# Modelos YOLO baixados automaticamente
+*.pt
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db

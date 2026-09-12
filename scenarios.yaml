@@ -1,0 +1,55 @@
+# Catálogo de cenários de captura.
+#
+# Adicionar um cenário novo: acrescentar uma entrada abaixo. Não é preciso
+# mexer em código.
+#
+# `id`   — slug estável (regex ^[a-z0-9_]+$), usado no nome dos arquivos
+#          gravados. NUNCA renomear um id depois de já existirem dados
+#          gravados com ele — quebraria a rastreabilidade das gravações.
+# `label`— ADL ou FALL. Define o rótulo gravado em <clip_id>_labels.npy.
+# `description` — opcional, texto livre mostrado no menu.
+
+scenarios:
+  # --- FALL ---
+  - id: queda_lado_esquerdo
+    label: FALL
+    description: "Queda lateral, caindo para o lado esquerdo"
+  - id: queda_lado_direito
+    label: FALL
+    description: "Queda lateral, caindo para o lado direito"
+  - id: queda_costas_esquerdo
+    label: FALL
+    description: "Queda de costas para a câmera, virando à esquerda"
+  - id: queda_costas_direito
+    label: FALL
+    description: "Queda de costas para a câmera, virando à direita"
+  - id: queda_de_frente
+    label: FALL
+    description: "Caindo de frente para a câmera"
+
+  # --- ADL ---
+  - id: andando
+    label: ADL
+  - id: sentando
+    label: ADL
+  - id: deitando
+    label: ADL
+  - id: agachando_chao
+    label: ADL
+    description: "Agachando para pegar algo do chão"
+  - id: agachando_banco
+    label: ADL
+    description: "Agachando para pegar algo de um banco/altura elevada"
+  - id: varrendo
+    label: ADL
+  - id: tomando_banho
+    label: ADL
+  - id: vestindo_roupa
+    label: ADL
+  - id: abracando
+    label: ADL
+  - id: duas_pessoas_andando
+    label: ADL
+  - id: tropeco
+    label: ADL
+    description: "Tropeço sem queda completa"

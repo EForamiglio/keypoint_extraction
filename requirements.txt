@@ -1,0 +1,6 @@
+ultralytics>=8.0
+lap>=0.5.12          # tracker BotSort usado por PoseSource (Ultralytics .track())
+opencv-python>=4.8
+numpy>=1.24
+pyyaml>=6.0
+pytest>=7.0
