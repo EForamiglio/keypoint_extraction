@@ -17,6 +17,9 @@ import numpy as np
 from capture_app.config import AppConfig, NUM_KEYPOINTS
 from capture_app.scenario_catalog import Scenario
 
+# Ombros e quadris: sem eles o clipe é inútil para qualquer classificador.
+TORSO_JOINTS = (5, 6, 11, 12)
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -40,6 +43,8 @@ class ClipResult:
     n_frames: int
     keypoints_path: Path
     labels_path: Path
+    timestamps_path: Path | None = None
+    measured_fps: float | None = None
 
 
 class RecordingSession:
@@ -50,13 +55,33 @@ class RecordingSession:
         self.take = take
         self._config = config
         self._frames: list[list[Detection]] = []
+        self._timestamps: list[float | None] = []
 
-    def add_frame(self, detections: list[Detection]) -> None:
+    def add_frame(self, detections: list[Detection], timestamp: float | None = None) -> None:
+        """`timestamp` em segundos (relógio monotônico). Sem ele o clipe fica
+        sem eixo de tempo e `measured_fps` é None."""
         self._frames.append(detections)
+        self._timestamps.append(timestamp)
 
     @property
     def n_frames(self) -> int:
         return len(self._frames)
+
+    @property
+    def measured_fps(self) -> float | None:
+        """FPS efetivo da tomada: intervalos entre frames / tempo decorrido.
+
+        O loop grava um frame por inferência do YOLO, então a taxa real fica
+        abaixo da que o driver da câmera reporta (medido: 22,4 fps contra 30,0
+        reportados). Usar o valor nominal rotularia o eixo de tempo errado e
+        distorceria qualquer reamostragem ou feature de velocidade a jusante.
+        """
+        if len(self._timestamps) < 2 or any(t is None for t in self._timestamps):
+            return None
+        elapsed = self._timestamps[-1] - self._timestamps[0]
+        if elapsed <= 0:
+            return None
+        return (len(self._timestamps) - 1) / elapsed
 
     def finalize(self, out_dir: Path) -> list[ClipResult]:
         """Agrupa por person_id, zero-preenche ausências, filtra tracks curtos
@@ -68,10 +93,20 @@ class RecordingSession:
         """
         by_person = self._group_by_person()
         label_value = 2 if self.scenario.is_fall else 0
+        fps = self.measured_fps
+        relative_t = None
+        if fps is not None:
+            relative_t = np.asarray(self._timestamps, dtype=np.float64)
+            relative_t = relative_t - relative_t[0]
         results: list[ClipResult] = []
 
         for person_idx, (_person_id, per_frame) in enumerate(sorted(by_person.items())):
-            n_valid = sum(1 for kp in per_frame if kp is not None)
+            # Conta só frames com o tronco inteiro: um track de 'pessoa' com
+            # joints soltos (ex.: borda de cortina) tinha frames, mas 0 de tronco.
+            n_valid = sum(
+                1 for kp in per_frame
+                if kp is not None and (kp[list(TORSO_JOINTS), 2] > 0).all()
+            )
             if n_valid < self._config.min_frames_per_person:
                 continue
 
@@ -87,12 +122,19 @@ class RecordingSession:
             np.save(keypoints_path, keypoints)
             np.save(labels_path, labels)
 
+            timestamps_path = None
+            if relative_t is not None:
+                timestamps_path = out_dir / f"{clip_id}_t.npy"
+                np.save(timestamps_path, relative_t)
+
             results.append(ClipResult(
                 clip_id=clip_id,
                 person_idx=person_idx,
                 n_frames=self.n_frames,
                 keypoints_path=keypoints_path,
                 labels_path=labels_path,
+                timestamps_path=timestamps_path,
+                measured_fps=fps,
             ))
 
         return results

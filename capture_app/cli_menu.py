@@ -7,7 +7,7 @@ a cada tomada adicionaria uma fricção que vai contra o propósito do app
 
 from __future__ import annotations
 
-import sys
+import math
 import time
 
 import cv2
@@ -31,28 +31,35 @@ def run(config: AppConfig) -> None:
     session_id = new_session_id()
     pose_source = PoseSource(
         config.yolo_model, config.yolo_conf, config.imgsz, config.device,
-        config.conf_threshold,
+        config.conf_threshold, iou=config.iou,
     )
 
     last_scenario_id: str | None = None
 
     try:
-        with Camera(config.camera_index) as camera:
-            fps = camera.fps
-            while True:
-                scenario = _prompt_menu(scenarios, config, last_scenario_id)
-                if scenario is None:
-                    break
-                last_scenario_id = scenario.id
-                take = _next_take(config, scenario.id)
+        while True:
+            scenario = _prompt_menu(scenarios, config, last_scenario_id)
+            if scenario is None:
+                break
+            last_scenario_id = scenario.id
+            take = _next_take(config, scenario.id)
 
-                _countdown(config.countdown_seconds, scenario)
-                session = _record_take(camera, pose_source, scenario, take, config)
-                if session is not None:
-                    _save_and_report(session, scenario, take, session_id, fps, config)
-    except CameraError as exc:
-        print(f"Erro: {exc}")
-        sys.exit(1)
+            # A câmera só fica aberta durante a tomada. Segurá-la aberta e
+            # parada no menu fazia o Windows invalidar o dispositivo após
+            # alguns minutos ocioso (MSMF -1072873822), e o app seguia com um
+            # objeto de câmera morto, falhando em toda tomada seguinte.
+            print("Abrindo câmera...")
+            try:
+                with Camera(config.camera_index) as camera:
+                    _countdown(config.countdown_seconds, scenario, camera)
+                    session = _record_take(camera, pose_source, scenario, take, config)
+                    fps = camera.fps
+            except CameraError as exc:
+                print(f"\nErro de câmera: {exc}\nNada foi gravado; volte ao menu e tente de novo.")
+                continue
+
+            if session is not None:
+                _save_and_report(session, scenario, take, session_id, fps, config)
     finally:
         cv2.destroyAllWindows()
 
@@ -86,10 +93,18 @@ def _next_take(config: AppConfig, scenario_id: str) -> int:
     return next_take_number(from_manifest | from_disk)
 
 
-def _countdown(seconds: int, scenario: Scenario) -> None:
-    for remaining in range(seconds, 0, -1):
-        print(f"Gravando '{scenario.id}' em {remaining}...", end="\r")
-        time.sleep(1)
+def _countdown(seconds: int, scenario: Scenario, camera: Camera) -> None:
+    """Contagem regressiva que lê (e descarta) frames da câmera: estabiliza a
+    exposição automática e evita que frames velhos do buffer entrem no início
+    da tomada."""
+    deadline = time.monotonic() + seconds
+    last_shown = None
+    while (remaining := deadline - time.monotonic()) > 0:
+        camera.read()
+        shown = math.ceil(remaining)
+        if shown != last_shown:
+            print(f"Gravando '{scenario.id}' em {shown}...", end="\r")
+            last_shown = shown
     print(" " * 60, end="\r")
 
 
@@ -110,7 +125,7 @@ def _record_take(
                 return None
 
             detections = pose_source.detect(frame)
-            session.add_frame(detections)
+            session.add_frame(detections, timestamp=time.perf_counter())
 
             draw_skeleton(frame, detections)
             draw_hud(
@@ -146,7 +161,8 @@ def _save_and_report(
         ManifestEntry(
             clip_id=clip.clip_id,
             is_fall=scenario.is_fall,
-            src_fps=fps,
+            # fps medido na tomada; o do driver só entra se não houve timestamps
+            src_fps=round(clip.measured_fps, 2) if clip.measured_fps else fps,
             lbl_path=clip.labels_path.resolve(),
             group_id=group_id,
             px_path=clip.keypoints_path.resolve(),
@@ -161,4 +177,6 @@ def _save_and_report(
     ]
     append_entries(config.manifest_path, entries)
 
-    print(f"Salvo: {len(clips)} clipe(s) -> {[c.clip_id for c in clips]}")
+    measured = clips[0].measured_fps
+    duration = f"{clips[0].n_frames / measured:.1f}s a {measured:.1f} fps" if measured else "sem timestamps"
+    print(f"Salvo: {len(clips)} clipe(s) -> {[c.clip_id for c in clips]}  ({duration})")

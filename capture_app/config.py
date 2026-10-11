@@ -44,7 +44,8 @@ class AppConfig:
 
     camera_index: int = 0
     yolo_model: str = "yolov8n-pose.pt"
-    yolo_conf: float = 0.25
+    yolo_conf: float = 0.4     # 0.25 deixava passar caixas duplicadas/espurias
+    iou: float = 0.5           # NMS; o padrao 0.7 mantem duplicatas com IoU ~0.66
     imgsz: int = 640
     device: str = "cpu"
     scenarios_path: Path = DEFAULT_SCENARIOS_PATH

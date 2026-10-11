@@ -31,8 +31,10 @@ def parse_args() -> AppConfig:
                         help="Índice da câmera (padrão: 0)")
     parser.add_argument("--model", default="yolov8n-pose.pt",
                         help="Modelo YOLO pose (baixa automaticamente se necessário)")
-    parser.add_argument("--conf", type=float, default=0.25,
+    parser.add_argument("--conf", type=float, default=0.4,
                         help="Confiança mínima de detecção do YOLO")
+    parser.add_argument("--iou", type=float, default=0.5,
+                        help="Limiar de IoU do NMS (menor = suprime mais caixas duplicadas)")
     parser.add_argument("--imgsz", type=int, default=640,
                         help="Resolução de entrada do YOLO")
     parser.add_argument("--device", default="cpu",
@@ -54,6 +56,7 @@ def parse_args() -> AppConfig:
         camera_index=args.camera_index,
         yolo_model=args.model,
         yolo_conf=args.conf,
+        iou=args.iou,
         imgsz=args.imgsz,
         device=args.device,
         scenarios_path=args.scenarios,

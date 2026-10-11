@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from capture_app.recording import Detection, RecordingSession
 
@@ -131,3 +132,74 @@ def test_clip_id_encodes_scenario_take_and_person_idx(
     clip = session.finalize(out_dir)[0]
 
     assert clip.clip_id == "sentando_take07_p0"
+
+
+def test_measured_fps_from_timestamps(app_config, adl_scenario, make_keypoints) -> None:
+    session = RecordingSession(adl_scenario, take=1, config=app_config)
+    kp = make_keypoints()
+    for i in range(11):                                   # 11 frames, 10 intervalos
+        session.add_frame([Detection(person_id=1, keypoints=kp)], timestamp=i * 0.05)
+
+    assert session.measured_fps == pytest.approx(20.0)
+
+
+def test_measured_fps_is_none_without_timestamps(
+    app_config, adl_scenario, make_keypoints,
+) -> None:
+    session = RecordingSession(adl_scenario, take=1, config=app_config)
+    for _ in range(5):
+        session.add_frame([Detection(person_id=1, keypoints=make_keypoints())])
+
+    assert session.measured_fps is None
+
+
+def test_finalize_saves_relative_timestamps(
+    app_config, adl_scenario, make_keypoints, tmp_path: Path,
+) -> None:
+    session = RecordingSession(adl_scenario, take=1, config=app_config)
+    kp = make_keypoints()
+    for i in range(4):
+        session.add_frame([Detection(person_id=1, keypoints=kp)], timestamp=100.0 + i * 0.1)
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    clip = session.finalize(out_dir)[0]
+
+    assert clip.measured_fps == pytest.approx(10.0)
+    saved_t = np.load(clip.timestamps_path)
+    np.testing.assert_allclose(saved_t, [0.0, 0.1, 0.2, 0.3])   # relativo ao 1o frame
+
+
+def test_finalize_without_timestamps_writes_no_timestamp_file(
+    app_config, adl_scenario, make_keypoints, tmp_path: Path,
+) -> None:
+    session = RecordingSession(adl_scenario, take=1, config=app_config)
+    for _ in range(3):
+        session.add_frame([Detection(person_id=1, keypoints=make_keypoints())])
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    clip = session.finalize(out_dir)[0]
+
+    assert clip.timestamps_path is None
+    assert not list(out_dir.glob("*_t.npy"))
+
+
+def test_track_without_torso_joints_is_discarded_even_with_many_frames(
+    app_config, adl_scenario, make_keypoints, tmp_path: Path,
+) -> None:
+    session = RecordingSession(adl_scenario, take=1, config=app_config)
+    real = make_keypoints(1)
+    ghost = make_keypoints(2).copy()
+    ghost[[5, 6, 11, 12], 2] = 0.0          # sem ombros/quadris (ex.: borda de cortina)
+    for _ in range(6):
+        session.add_frame([
+            Detection(person_id=1, keypoints=real),
+            Detection(person_id=2, keypoints=ghost),
+        ])
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    results = session.finalize(out_dir)
+
+    assert [r.clip_id for r in results] == ["sentando_take01_p0"]

@@ -27,12 +27,14 @@ class PoseSource:
         imgsz: int,
         device: str,
         conf_threshold: float,
+        iou: float = 0.5,
     ) -> None:
         self._model = YOLO(model_path)
         self._conf = conf
         self._imgsz = imgsz
         self._device = device
         self._conf_threshold = conf_threshold
+        self._iou = iou
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         """Roda pose + tracking num frame BGR.
@@ -46,6 +48,7 @@ class PoseSource:
             frame,
             conf=self._conf,
             imgsz=self._imgsz,
+            iou=self._iou,
             device=self._device,
             persist=True,
             tracker="botsort.yaml",
